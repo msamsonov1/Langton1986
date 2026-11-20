@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Langton's Ant — 1987 Emergent Behavior Simulation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        /* Custom subtle grid background for canvas container */
+        .canvas-wrapper {
+            background-image: radial-gradient(#334155 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        canvas {
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-indigo-500 selection:text-white">
+
+    <!-- Header & Phase Status -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-10">
+        <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                    <!-- Ant SVG Icon -->
+                    <svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="6" r="2.5"/>
+                        <ellipse cx="12" cy="12" rx="2" ry="2.5"/>
+                        <ellipse cx="12" cy="18.5" rx="3" ry="3.5"/>
+                        <path d="M9.5 11L5 8M14.5 11L19 8M9.5 13L4 14M14.5 13L20 14M9 17L5 20M15 17L19 20"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-tight text-white leading-tight">Langton's Ant</h1>
+                    <p class="text-xs text-slate-400">Chris Langton (1986/1987) • Cellular Automaton</p>
+                </div>
+            </div>
+
+            <!-- Live Metrics -->
+            <div class="flex items-center gap-3 sm:gap-6 bg-slate-950/70 px-4 py-2 rounded-xl border border-slate-800">
+                <div>
+                    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Steps</div>
+                    <div id="stepCount" class="mono text-lg sm:text-xl font-bold text-indigo-400">0</div>
+                </div>
+                <div class="h-7 w-px bg-slate-800"></div>
+                <div>
+                    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Speed</div>
+                    <div id="speedDisplay" class="mono text-sm sm:text-base font-semibold text-emerald-400">1 step/frame</div>
+                </div>
+                <div class="h-7 w-px bg-slate-800 hidden sm:block"></div>
+                <div class="hidden sm:block">
+                    <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Phase</div>
+                    <div id="phaseBadge" class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 mt-0.5">
+                        1. Simplicity
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Simulation Viewport -->
+    <main class="flex-1 flex flex-col items-center justify-center p-4 gap-4 max-w-6xl w-full mx-auto">
+        
+        <!-- Mobile Phase Banner -->
+        <div class="sm:hidden w-full flex items-center justify-between bg-slate-900 border border-slate-800 px-3.5 py-2 rounded-xl">
+            <span class="text-xs text-slate-400 font-medium">Current Emergent Phase:</span>
+            <span id="phaseBadgeMobile" class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                1. Simplicity
+            </span>
+        </div>
+
+        <!-- Canvas Container -->
+        <div id="canvasContainer" class="canvas-wrapper relative w-full h-[55vh] sm:h-[62vh] bg-white rounded-2xl shadow-2xl overflow-hidden border-2 border-slate-700/80 flex items-center justify-center">
+            <canvas id="antCanvas"></canvas>
+
+            <!-- Milestone Notification Toast -->
+            <div id="milestoneToast" class="pointer-events-none opacity-0 transition-all duration-500 transform translate-y-2 absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/95 text-white border border-amber-500/50 shadow-xl px-4 py-2.5 rounded-xl flex items-center gap-2.5 backdrop-blur-md">
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping"></span>
+                <span id="milestoneText" class="text-xs sm:text-sm font-medium text-amber-200">Step 9,977+: The Ant escaped chaos and built the Highway!</span>
+            </div>
+
+            <!-- Rules Legend Overlay -->
+            <div class="absolute bottom-3 left-3 bg-slate-900/85 backdrop-blur-md border border-slate-700/70 rounded-xl p-2.5 text-[11px] text-slate-300 hidden md:flex flex-col gap-1.5 shadow-lg">
+                <div class="flex items-center gap-2">
+                    <span class="w-3.5 h-3.5 rounded-sm bg-white border border-slate-400 inline-block"></span>
+                    <span><strong>White:</strong> Turn 90° Right, Flip Black, Move</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="w-3.5 h-3.5 rounded-sm bg-slate-900 border border-slate-600 inline-block"></span>
+                    <span><strong>Black:</strong> Turn 90° Left, Flip White, Move</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="w-3.5 h-3.5 rounded-sm bg-rose-500 inline-block"></span>
+                    <span><strong>Red Square:</strong> Langton's Ant</span>
+                </div>
+            </div>
+
+            <!-- Zoom Controls Overlay -->
+            <div class="absolute bottom-3 right-3 flex items-center gap-1.5 bg-slate-900/85 backdrop-blur-md border border-slate-700/70 rounded-xl p-1.5 shadow-lg">
+                <button id="zoomOutBtn" title="Zoom Out" class="p-1.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 12H4"/></svg>
+                </button>
+                <span id="zoomLabel" class="mono text-xs text-slate-300 px-1.5 select-none">5px</span>
+                <button id="zoomInBtn" title="Zoom In" class="p-1.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white transition">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Primary Control Bar -->
+        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-3 sm:p-4 shadow-xl flex flex-wrap items-center justify-center gap-2.5 sm:gap-3">
+            
+            <!-- Play Button -->
+            <button id="playBtn" class="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white shadow-lg shadow-emerald-600/25 transition cursor-pointer">
+                <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                <span>Play</span>
+            </button>
+
+            <!-- Stop / Pause Button -->
+            <button id="stopBtn" class="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm bg-rose-600 hover:bg-rose-500 active:scale-95 text-white shadow-lg shadow-rose-600/25 transition cursor-pointer">
+                <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
+                <span>Stop</span>
+            </button>
+
+            <div class="h-8 w-px bg-slate-800 hidden sm:block mx-1"></div>
+
+            <!-- Slow Down Button -->
+            <button id="slowDownBtn" class="flex items-center gap-1.5 px-4 py-2.5 rounded-xl font-medium text-sm bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 border border-slate-700 transition cursor-pointer">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/></svg>
+                <span>Slow Down</span>
+            </button>
+
+            <!-- Speed Up Button -->
+            <button id="speedUpBtn" class="flex items-center gap-1.5 px-4 py-2.5 rounded-xl font-medium text-sm bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white shadow-lg shadow-indigo-600/25 transition cursor-pointer">
+                <span>Speed Up</span>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+            </button>
+
+            <div class="h-8 w-px bg-slate-800 hidden md:block mx-1"></div>
+
+            <!-- Jump to 10,000 Steps Button -->
+            <button id="jump10kBtn" class="flex items-center gap-1.5 px-4 py-2.5 rounded-xl font-medium text-sm bg-amber-500/15 hover:bg-amber-500/25 active:scale-95 text-amber-300 border border-amber-500/40 transition cursor-pointer">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                <span>Fast-Forward to 10,000</span>
+            </button>
+
+            <!-- Reset Button -->
+            <button id="resetBtn" class="flex items-center gap-1.5 px-4 py-2.5 rounded-xl font-medium text-sm bg-slate-800/70 hover:bg-slate-700 active:scale-95 text-slate-400 hover:text-white border border-slate-700/70 transition cursor-pointer">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                <span>Reset</span>
+            </button>
+        </div>
+
+        <!-- Progress Bar toward 10,000 Highway Milestone -->
+        <div class="w-full bg-slate-900/90 border border-slate-800 rounded-xl px-4 py-2.5 flex flex-col gap-1.5">
+            <div class="flex justify-between items-center text-xs">
+                <span class="text-slate-400 font-medium">Progress to Emergent Highway (~9,977 steps)</span>
+                <span id="progressPercent" class="mono text-slate-300 font-semibold">0%</span>
+            </div>
+            <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                <div id="progressBar" class="h-full bg-gradient-to-r from-sky-500 via-indigo-500 to-amber-400 transition-all duration-150" style="width: 0%"></div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        /**
+         * Langton's Ant Interactive Simulation
+         * Demonstrates emergent order ("The Highway") after ~9,977 chaotic steps.
+         */
+        (function () {
+            // DOM Elements
+            const canvas = document.getElementById('antCanvas');
+            const ctx = canvas.getContext('2d');
+            const container = document.getElementById('canvasContainer');
+
+            const stepCountEl = document.getElementById('stepCount');
+            const speedDisplayEl = document.getElementById('speedDisplay');
+            const phaseBadgeEl = document.getElementById('phaseBadge');
+            const phaseBadgeMobileEl = document.getElementById('phaseBadgeMobile');
+            const progressBarEl = document.getElementById('progressBar');
+            const progressPercentEl = document.getElementById('progressPercent');
+            const milestoneToast = document.getElementById('milestoneToast');
+            const zoomLabel = document.getElementById('zoomLabel');
+
+            const playBtn = document.getElementById('playBtn');
+            const stopBtn = document.getElementById('stopBtn');
+            const speedUpBtn = document.getElementById('speedUpBtn');
+            const slowDownBtn = document.getElementById('slowDownBtn');
+            const jump10kBtn = document.getElementById('jump10kBtn');
+            const resetBtn = document.getElementById('resetBtn');
+            const zoomInBtn = document.getElementById('zoomInBtn');
+            const zoomOutBtn = document.getElementById('zoomOutBtn');
+
+            // Grid & Simulation Configuration
+            const GRID_SIZE = 300; // 300x300 grid gives plenty of room for the 10k highway
+            let grid = new Uint8Array(GRID_SIZE * GRID_SIZE); // 0 = white, 1 = black
+
+            // Ant State
+            // Directions: 0 = Up (North), 1 = Right (East), 2 = Down (South), 3 = Left (West)
+            let antX = Math.floor(GRID_SIZE / 2);
+            let antY = Math.floor(GRID_SIZE / 2);
+            let antDir = 0;
+
+            // Simulation Playback State
+            let steps = 0;
+            let isRunning = false;
+            let animationFrameId = null;
+            let highwayAnnounced = false;
+
+            // Speed Levels (steps per animation frame, or fractional delay for ultra-slow)
+            const SPEED_LEVELS = [
+                { label: '0.2x (Slow)', stepsPerFrame: 1, frameSkip: 15 },
+                { label: '0.5x', stepsPerFrame: 1, frameSkip: 5 },
+                { label: '1 step/frame', stepsPerFrame: 1, frameSkip: 1 },
+                { label: '5 steps/frame', stepsPerFrame: 5, frameSkip: 1 },
+                { label: '25 steps/frame', stepsPerFrame: 25, frameSkip: 1 },
+                { label: '100 steps/frame', stepsPerFrame: 100, frameSkip: 1 },
+                { label: '350 steps/frame', stepsPerFrame: 350, frameSkip: 1 },
+                { label: '1,000 steps/frame', stepsPerFrame: 1000, frameSkip: 1 }
+            ];
+            let speedIndex = 2; // Default: 1 step/frame
+            let frameCounter = 0;
+
+            // Rendering & Camera State
+            let cellSize = 5; // Pixels per grid square
+            let cameraOffsetX = 0;
+            let cameraOffsetY = 0;
+
+            /**
+             * Resize canvas cleanly to match container dimensions
+             */
+            function resizeCanvas() {
+                const rect = container.getBoundingClientRect();
+                canvas.width = rect.width;
+                canvas.height = rect.height;
+                draw();
+            }
+
+            /**
+             * Execute a single step of Langton's Ant rules
+             */
+            function stepAnt() {
+                const idx = antY * GRID_SIZE + antX;
+                const currentColor = grid[idx];
+
+                if (currentColor === 0) {
+                    // White square: turn 90° clockwise, flip to black
+                    antDir = (antDir + 1) % 4;
+                    grid[idx] = 1;
+                } else {
+                    // Black square: turn 90° counter-clockwise, flip to white
+                    antDir = (antDir + 3) % 4;
+                    grid[idx] = 0;
+                }
+
+                // Move forward 1 unit
+                if (antDir === 0) antY--;
+                else if (antDir === 1) antX++;
+                else if (antDir === 2) antY++;
+                else if (antDir === 3) antX--;
+
+                // Wrap around boundaries safely if ant travels very far
+                if (antX < 0) antX = GRID_SIZE - 1;
+                if (antX >= GRID_SIZE) antX = 0;
+                if (antY < 0) antY = GRID_SIZE - 1;
+                if (antY >= GRID_SIZE) antY = 0;
+
+                steps++;
+            }
+
+            /**
+             * Render the grid and the ant onto the HTML5 Canvas
+             */
+            function draw() {
+                // Fill white background
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                const centerX = Math.floor(canvas.width / 2);
+                const centerY = Math.floor(canvas.height / 2);
+                const gridCenter = Math.floor(GRID_SIZE / 2);
+
+                // Calculate visible grid bounds for fast rendering
+                const colsVisible = Math.ceil(canvas.width / cellSize) + 2;
+                const rowsVisible = Math.ceil(canvas.height / cellSize) + 2;
+
+                const startCol = Math.max(0, Math.floor(gridCenter - colsVisible / 2 - cameraOffsetX));
+                const endCol = Math.min(GRID_SIZE, Math.ceil(gridCenter + colsVisible / 2 - cameraOffsetX));
+                const startRow = Math.max(0, Math.floor(gridCenter - rowsVisible / 2 - cameraOffsetY));
+                const endRow = Math.min(GRID_SIZE, Math.ceil(gridCenter + rowsVisible / 2 - cameraOffsetY));
+
+                // Draw faint grid lines when zoomed in enough
+                if (cellSize >= 6) {
+                    ctx.strokeStyle = '#f1f5f9';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    for (let x = startCol; x <= endCol; x++) {
+                        const screenX = centerX + (x - gridCenter + cameraOffsetX) * cellSize;
+                        ctx.moveTo(screenX, 0);
+                        ctx.lineTo(screenX, canvas.height);
+                    }
+                    for (let y = startRow; y <= endRow; y++) {
+                        const screenY = centerY + (y - gridCenter + cameraOffsetY) * cellSize;
+                        ctx.moveTo(0, screenY);
+                        ctx.lineTo(canvas.width, screenY);
+                    }
+                    ctx.stroke();
+                }
+
+                // Draw black squares
+                ctx.fillStyle = '#0f172a';
+                for (let y = startRow; y < endRow; y++) {
+                    const rowOffset = y * GRID_SIZE;
+                    const screenY = centerY + (y - gridCenter + cameraOffsetY) * cellSize;
+                    for (let x = startCol; x < endCol; x++) {
+                        if (grid[rowOffset + x] === 1) {
+                            const screenX = centerX + (x - gridCenter + cameraOffsetX) * cellSize;
+                            ctx.fillRect(screenX, screenY, cellSize, cellSize);
+                        }
+                    }
+                }
+
+                // Draw the Ant (bright crimson square with directional indicator)
+                const antScreenX = centerX + (antX - gridCenter + cameraOffsetX) * cellSize;
+                const antScreenY = centerY + (antY - gridCenter + cameraOffsetY) * cellSize;
+                ctx.fillStyle = '#f43f5e';
+                ctx.fillRect(antScreenX, antScreenY, Math.max(cellSize, 4), Math.max(cellSize, 4));
+            }
+
+            /**
+             * Update step counters, emergent phase badges, and progress bar
+             */
+            function updateUI() {
+                stepCountEl.textContent = steps.toLocaleString();
+                speedDisplayEl.textContent = SPEED_LEVELS[speedIndex].label;
+
+                // Update Phase Badge
+                let phaseText = '1. Simplicity';
+                let badgeClasses = 'bg-sky-500/15 text-sky-300 border-sky-500/30';
+
+                if (steps >= 9977) {
+                    phaseText = '3. Emergent Highway!';
+                    badgeClasses = 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+                    if (!highwayAnnounced) {
+                        highwayAnnounced = true;
+                        showToast('Step 9,977 reached! The ant escaped chaos and is building the diagonal Highway.');
+                    }
+                } else if (steps >= 500) {
+                    phaseText = '2. Chaos Phase';
+                    badgeClasses = 'bg-purple-500/15 text-purple-300 border-purple-500/30';
+                }
+
+                [phaseBadgeEl, phaseBadgeMobileEl].forEach(el => {
+                    el.textContent = phaseText;
+                    el.className = `text-xs font-semibold px-2.5 py-0.5 rounded-full border mt-0.5 ${badgeClasses}`;
+                });
+
+                // Update Progress toward 10,000
+                const pct = Math.min(100, Math.round((steps / 10000) * 100));
+                progressBarEl.style.width = `${pct}%`;
+                progressPercentEl.textContent = steps >= 10000 ? '100% (Highway Active)' : `${pct}%`;
+
+                // Highlight Play/Stop active states
+                if (isRunning) {
+                    playBtn.classList.add('ring-2', 'ring-emerald-300');
+                    stopBtn.classList.remove('ring-2', 'ring-rose-300');
+                } else {
+                    playBtn.classList.remove('ring-2', 'ring-emerald-300');
+                    stopBtn.classList.add('ring-2', 'ring-rose-300');
+                }
+            }
+
+            /**
+             * Display a temporary non-intrusive notification banner
+             */
+            function showToast(msg) {
+                document.getElementById('milestoneText').textContent = msg;
+                milestoneToast.classList.remove('opacity-0', 'translate-y-2');
+                milestoneToast.classList.add('opacity-100', 'translate-y-0');
+                setTimeout(() => {
+                    milestoneToast.classList.remove('opacity-100', 'translate-y-0');
+                    milestoneToast.classList.add('opacity-0', 'translate-y-2');
+                }, 4500);
+            }
+
+            /**
+             * Main animation loop
+             */
+            function loop() {
+                if (!isRunning) return;
+
+                const currentSpeed = SPEED_LEVELS[speedIndex];
+                frameCounter++;
+
+                if (frameCounter >= currentSpeed.frameSkip) {
+                    frameCounter = 0;
+                    for (let i = 0; i < currentSpeed.stepsPerFrame; i++) {
+                        stepAnt();
+                    }
+                    draw();
+                    updateUI();
+                }
+
+                animationFrameId = requestAnimationFrame(loop);
+            }
+
+            // Control Handlers
+            function startSimulation() {
+                if (!isRunning) {
+                    isRunning = true;
+                    updateUI();
+                    loop();
+                }
+            }
+
+            function stopSimulation() {
+                isRunning = false;
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = null;
+                }
+                updateUI();
+            }
+
+            function speedUp() {
+                if (speedIndex < SPEED_LEVELS.length - 1) {
+                    speedIndex++;
+                    updateUI();
+                }
+                if (!isRunning) startSimulation();
+            }
+
+            function slowDown() {
+                if (speedIndex > 0) {
+                    speedIndex--;
+                    updateUI();
+                }
+            }
+
+            function jumpTo10000() {
+                // If already past 10,000, advance by another 1,000 steps so button remains useful
+                const target = steps < 10000 ? 10000 : steps + 1000;
+                while (steps < target) {
+                    stepAnt();
+                }
+                // Adjust zoom slightly if needed so the highway is clearly visible
+                if (cellSize > 4) {
+                    cellSize = 4;
+                    zoomLabel.textContent = `${cellSize}px`;
+                }
+                draw();
+                updateUI();
+            }
+
+            function resetSimulation() {
+                stopSimulation();
+                grid.fill(0);
+                antX = Math.floor(GRID_SIZE / 2);
+                antY = Math.floor(GRID_SIZE / 2);
+                antDir = 0;
+                steps = 0;
+                highwayAnnounced = false;
+                cameraOffsetX = 0;
+                cameraOffsetY = 0;
+                draw();
+                updateUI();
+            }
+
+            // Event Listeners
+            playBtn.addEventListener('click', startSimulation);
+            stopBtn.addEventListener('click', stopSimulation);
+            speedUpBtn.addEventListener('click', speedUp);
+            slowDownBtn.addEventListener('click', slowDown);
+            jump10kBtn.addEventListener('click', jumpTo10000);
+            resetBtn.addEventListener('click', resetSimulation);
+
+            zoomInBtn.addEventListener('click', () => {
+                if (cellSize < 16) {
+                    cellSize += 1;
+                    zoomLabel.textContent = `${cellSize}px`;
+                    draw();
+                }
+            });
+
+            zoomOutBtn.addEventListener('click', () => {
+                if (cellSize > 2) {
+                    cellSize -= 1;
+                    zoomLabel.textContent = `${cellSize}px`;
+                    draw();
+                }
+            });
+
+            // Click & Drag panning on canvas so user can follow the highway
+            let isDragging = false;
+            let lastMouseX = 0;
+            let lastMouseY = 0;
+
+            canvas.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                const dx = e.clientX - lastMouseX;
+                const dy = e.clientY - lastMouseY;
+                cameraOffsetX += dx / cellSize;
+                cameraOffsetY += dy / cellSize;
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+                draw();
+            });
+
+            window.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+
+            // Touch panning support for mobile
+            canvas.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1) {
+                    isDragging = true;
+                    lastMouseX = e.touches[0].clientX;
+                    lastMouseY = e.touches[0].clientY;
+                }
+            }, { passive: true });
+
+            canvas.addEventListener('touchmove', (e) => {
+                if (!isDragging || e.touches.length !== 1) return;
+                const dx = e.touches[0].clientX - lastMouseX;
+                const dy = e.touches[0].clientY - lastMouseY;
+                cameraOffsetX += dx / cellSize;
+                cameraOffsetY += dy / cellSize;
+                lastMouseX = e.touches[0].clientX;
+                lastMouseY = e.touches[0].clientY;
+                draw();
+            }, { passive: true });
+
+            canvas.addEventListener('touchend', () => {
+                isDragging = false;
+            });
+
+            // Initialize on load
+            window.addEventListener('resize', resizeCanvas);
+            window.onload = function () {
+                resizeCanvas();
+                updateUI();
+            };
+        })();
+    </script>
+</body>
+</html>
